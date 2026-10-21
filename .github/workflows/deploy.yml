@@ -1,0 +1,87 @@
+name: Deploy integration worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target GitHub Environment
+        required: true
+        type: choice
+        options:
+          - dev
+          - qa
+          - prod
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and test
+        run: dotnet test IntegrationWorker.sln --configuration Release
+
+      - name: Publish Function
+        run: dotnet publish services/integration-worker/IntegrationWorker.csproj --configuration Release --output publish
+
+      - name: Create deployment archive
+        run: |
+          cd publish
+          zip -r ../function.zip .
+
+      - name: Sign in to Azure using federated credentials
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate Bicep
+        run: az bicep build --file infra/main.bicep --stdout > /dev/null
+
+      - name: Deploy infrastructure
+        id: infrastructure
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ inputs.environment }}" in
+            dev|qa|prod) ;;
+            *) echo "Unsupported environment"; exit 1 ;;
+          esac
+          deployment_name="integration-worker-${{ inputs.environment }}-${GITHUB_RUN_ID}"
+          az deployment group create \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$deployment_name" \
+            --template-file infra/main.bicep \
+            --parameters ".azure/environments/${{ inputs.environment }}.bicepparam"
+          app_name="$(az deployment group show \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$deployment_name" \
+            --query properties.outputs.functionAppName.value \
+            --output tsv)"
+          echo "function_app_name=$app_name" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy Function package
+        run: |
+          az functionapp deployment source config-zip \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "${{ steps.infrastructure.outputs.function_app_name }}" \
+            --src function.zip

@@ -1,0 +1,17 @@
+# Local credentials and configuration
+.env
+**/local.settings.json
+
+# .NET build and test output
+**/bin/
+**/obj/
+TestResults/
+coverage/
+
+# Azure Functions local state
+.func/
+data/
+
+# IDE
+.vs/
+.vscode/*.user

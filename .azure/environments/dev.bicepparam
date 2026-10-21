@@ -1,0 +1,11 @@
+using '../../infra/main.bicep'
+
+param deploymentEnvironment = 'dev'
+param location = 'TODO_SELECT_AZURE_REGION'
+param functionAppName = 'TODO-INTEGRATION-WORKER-DEV'
+param hostingPlanSkuName = 'TODO_SELECT_SKU'
+param hostingPlanSkuTier = 'TODO_SELECT_SKU_TIER'
+param operatingSystem = 'TODO_SELECT_WINDOWS_OR_LINUX'
+param storageSkuName = 'TODO_SELECT_STORAGE_REDUNDANCY_SKU'
+param storageAccountName = 'tododevstorage0001'
+param phoneCallsSchedule = 'TODO_CONFIRM_DAILY_CRON_TIME'
